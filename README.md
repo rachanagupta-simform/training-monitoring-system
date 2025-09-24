@@ -245,4 +245,130 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
+## 🧱 Architecture Overview
+
+Layered modular design:
+- Presentation: Flask/FastAPI (dashboard + REST APIs)
+- Service Layer: Orchestrates metric logging, experiment lifecycle, notification triggers
+- Persistence: SQLite / (pluggable: Postgres, MySQL) for metadata + file system / object store for artifacts
+- Monitoring Core: Metric normalization, aggregation, retention pruning
+- Background Workers (optional): Asynchronous email/Slack notifications, checkpoint cleanup
+
+Data flow (simplified):
+Trainer -> Monitoring Client SDK -> REST API -> Service Layer -> DB + Artifact Store -> Dashboard Queries -> Visualizations
+
+### Component Responsibilities
+- training_monitor/monitor_client.py: Thin logging interface (log_metrics, log_image, save_checkpoint)
+- services/experiment_service.py: Create/update experiments, status transitions
+- services/metric_service.py: Validation, batching, retention enforcement
+- repositories/*: Database CRUD abstractions
+- utils/system_metrics.py: Resource usage sampling (psutil)
+- notifications/*: Slack/email dispatch
+
+## 🧰 Technology Stack
+- Python (3.8+)
+- Web: Flask or FastAPI (choose one in implementation)
+- DB: SQLite default (switchable via DATABASE_URL)
+- Task Queue (optional future): Celery / RQ
+- Serialization: JSON + optional Parquet for large metric series
+- Visualization: Chart.js / Plotly in frontend
+
+## 🔄 Development Workflow
+1. Create virtual environment
+2. Install dependencies: pip install -r requirements.txt
+3. Pre-commit (optional): black, isort, flake8
+4. Run tests before push: pytest -q
+5. Feature branch naming: feature/<short-desc>, fix/<issue-id>, perf/<area>
+6. Commit convention (recommended):
+   - feat: new feature
+   - fix: bug fix
+   - perf: performance improvement
+   - refactor: non-behavioral change
+   - docs: documentation only
+
+## 🗄️ Data & Storage Strategy
+| Data Type | Location | Retention | Notes |
+|-----------|----------|-----------|-------|
+| Metrics | DB (metrics table) | Configurable (METRICS_RETENTION_DAYS) | Pruned via scheduled job |
+| Checkpoints | experiments/<exp_id>/checkpoints | Manual / policy | Consider size limits |
+| Artifacts (plots/images) | experiments/<exp_id>/artifacts | Until experiment archived | Future: S3/GCS backend |
+| Logs | logs/ | Rotated | Use log rotation policy |
+
+## 📦 Environment Matrix (Suggested)
+| Env | DEBUG | DB | Notifications | Notes |
+|-----|-------|----|--------------|-------|
+| local | True | SQLite | Disabled by default | Rapid iteration |
+| staging | False | Postgres | Enabled | Pre-production validation |
+| production | False | Managed Postgres | Enabled + rate limits | SLA focus |
+
+## 🔐 Security & Compliance
+- Secrets: Only via environment variables (never commit .env)
+- Input Validation: Sanitize metric names (alphanumeric + underscore)
+- Rate Limiting (future): Prevent metric flood
+- Auth (future roadmap): API tokens per project
+- Principle of Least Privilege: App password / token scope minimal
+- Dependency Scanning: Use pip-audit or safety monthly
+
+## 🧾 Logging Strategy
+Levels:
+- DEBUG: Development only (verbose metric ingestion traces)
+- INFO: Experiment lifecycle events
+- WARNING: Slow queries, near-storage limits
+- ERROR: Failed writes, notification errors
+- CRITICAL: DB unreachable, data corruption risk
+
+Log Fields (structured if enabled): timestamp, level, component, experiment_id, message
+
+## 🧪 Testing Strategy
+- Unit: services/*, repositories/*
+- Integration: API endpoints + temporary SQLite
+- Performance (optional): Bulk metric ingestion (10k points) + latency threshold
+- Regression: Snapshot comparison for serialized responses
+
+## 📉 Performance Considerations
+- Batch insertion: Group metrics by experiment + step
+- Indexing: (experiment_id, step) composite index
+- Pruning: Run off-peak (nightly) to reclaim rows
+- Payload size: Encourage incremental logging, avoid giant blobs
+
+## 🛎 Notifications (Pluggable)
+Trigger Types:
+- Experiment state change (RUNNING -> COMPLETED/FAILED)
+- Metric threshold breach (custom rule future)
+- Resource utilization > configurable threshold
+
+## 🧯 Troubleshooting
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Metrics not appearing | DB write failure | Check logs/permissions |
+| Dashboard slow | Unindexed queries | Add proper index, vacuum DB |
+| Disk filling quickly | Large checkpoints | Set retention / compress |
+| High memory usage | Large metric result set | Paginate / window queries |
+| Notification spam | Misconfigured thresholds | Adjust notification settings |
+
+## ❓ FAQ
+Q: Can I use Postgres instead of SQLite?
+A: Yes. Set DATABASE_URL=postgresql+psycopg2://user:pass@host/dbname
+
+Q: How to reduce DB size?
+A: Lower METRICS_RETENTION_DAYS, enable pruning, compress artifacts.
+
+Q: How to add a custom metric type?
+A: Extend metric_service to validate + store new schema column or JSON field.
+
+Q: GPU stats support?
+A: Planned. Interim: integrate nvidia-smi parsing in system_metrics.
+
+Q: Multi-user auth?
+A: On roadmap (token + role-based access planned).
+
+## 🗺 Future Extensions
+- Streaming WebSocket metric updates
+- Plugin system for custom exporters
+- Auto hyperparameter sweep tracking
+- Model lineage graph
+- OpenTelemetry integration
+
+---
+
 **Built with ❤️ by the Simform ML Team**
